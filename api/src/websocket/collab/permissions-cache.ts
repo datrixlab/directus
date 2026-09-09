@@ -151,17 +151,17 @@ export class PermissionCache {
 			this.timers.delete(key);
 		}
 
-		// Clean up metadata for LRU eviction if at capacity
-		// LRUMapWithDelete auto-evicts, but we need to clean up our tag mappings
-		if (!this.cache.has(key) && this.cache.size >= this.cache.capacity) {
-			const lruKey = this.cache.keys().next().value;
+		// LRUMapWithDelete auto-evicts, but we need to clean up our tag mappings.
+		// `setpop` reports which key it evicted, which is the only reliable way to
+		// know: `keys()` iterates from most to least recently used, so its first
+		// entry is the key that is staying, not the one being dropped. Its typings
+		// claim a record is always returned; it returns null when nothing was
+		// evicted, and an update of an existing key evicts nothing.
+		const evicted = this.cache.setpop(key, fields) as { evicted: boolean; key: CacheKey } | null;
 
-			if (lruKey) {
-				this.cleanupKeyMetadata(lruKey);
-			}
+		if (evicted?.evicted) {
+			this.cleanupKeyMetadata(evicted.key);
 		}
-
-		this.cache.set(key, fields);
 
 		if (ttlMs) {
 			const timer = setTimeout(() => {

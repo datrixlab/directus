@@ -325,5 +325,45 @@ describe('PermissionCache', () => {
 			expect(cache.get(mockAccountability, 'posts', '2', 'read')).toBeUndefined();
 			expect(cache.get(mockAccountability, 'posts', '1', 'read')).toBeDefined();
 		});
+
+		test('an entry that survives eviction can still be invalidated', () => {
+			// Capacity is 5, so this evicts item 1 and keeps 2 through 6.
+			for (const item of ['1', '2', '3', '4', '5', '6']) {
+				cache.set(mockAccountability, 'posts', item, 'read', [item]);
+			}
+
+			expect(cache.get(mockAccountability, 'posts', '1', 'read')).toBeUndefined();
+			expect(cache.get(mockAccountability, 'posts', '5', 'read')).toEqual(['5']);
+
+			busHandler({ collection: 'posts', keys: ['5'] });
+
+			expect(cache.get(mockAccountability, 'posts', '5', 'read')).toBeUndefined();
+		});
+
+		test('a collection invalidation reaches every entry left after eviction churn', () => {
+			// Nine inserts into a cache of five: only 5 through 9 remain, and all of
+			// them have to answer to their collection tag.
+			for (let item = 1; item <= 9; item++) {
+				cache.set(mockAccountability, 'posts', String(item), 'read', [String(item)]);
+			}
+
+			busHandler({ collection: 'posts' });
+
+			for (let item = 5; item <= 9; item++) {
+				expect(cache.get(mockAccountability, 'posts', String(item), 'read')).toBeUndefined();
+			}
+		});
+
+		test('an evicted entry leaves no tags behind', () => {
+			for (const item of ['1', '2', '3', '4', '5', '6']) {
+				cache.set(mockAccountability, 'posts', item, 'read', [item]);
+			}
+
+			// Item 1 was evicted, so nothing may still be pointing at it: the tag
+			// maps are the part that never shrinks on its own.
+			const tags = (cache as unknown as { tags: Map<string, Set<string>> }).tags;
+			expect(tags.has('item:posts:1')).toBe(false);
+			expect(tags.has('item:posts:5')).toBe(true);
+		});
 	});
 });
